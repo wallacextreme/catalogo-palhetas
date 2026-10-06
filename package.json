@@ -1,0 +1,45 @@
+{
+  "name": "palhetas-catalogo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Catálogo técnico e cross-reference de palhetas automotivas (Dyna, CINOY, Vetor) — offline-first, Web/PWA + Tauri.",
+  "scripts": {
+    "dev": "vite",
+    "build": "bun run typecheck && vite build",
+    "build:web": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src scripts tests",
+    "test": "bun test",
+    "test:unit": "bun test tests/unit",
+    "test:integration": "bun test tests/integration",
+    "data:extract": "bun scripts/pipeline/extract.ts",
+    "data:build": "bun scripts/pipeline/run.ts",
+    "data:validate": "bun scripts/pipeline/validate-only.ts",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-sql": "^2.0.0",
+    "dexie": "^4.0.0",
+    "minisearch": "^7.1.0",
+    "preact": "^10.24.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@preact/preset-vite": "^2.9.0",
+    "@tailwindcss/vite": "^4.0.0",
+    "@tauri-apps/cli": "^2.0.0",
+    "@types/bun": "latest",
+    "eslint": "^9.0.0",
+    "fake-indexeddb": "^6.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.0.0",
+    "vite": "^6.0.0",
+    "vite-plugin-pwa": "^0.21.0"
+  }
+}

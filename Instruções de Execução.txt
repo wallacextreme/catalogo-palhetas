@@ -1,0 +1,13 @@
+Instruções de Execução
+Para rodar a aplicação Web / PWA localmente:
+bash
+bun run dev
+Acesse http://localhost:5173 no navegador. A aplicação funciona com cache offline total.
+
+Para rodar em modo Desktop Windows (Tauri v2):
+bash
+bun run tauri dev
+Ou gerar o executável nativo do instalador Windows:
+
+bash
+bun run tauri build

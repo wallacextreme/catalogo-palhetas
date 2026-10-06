@@ -1,0 +1,9 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+*.log
+.DS_Store
+# Dados brutos são regeneráveis a partir dos PDFs (bun run data:extract)
+data/raw/*.raw.json
+*.pdf

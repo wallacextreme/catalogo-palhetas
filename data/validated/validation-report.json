@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-10-06T14:21:56.578Z",
+  "isValid": true,
+  "totalErrors": 0,
+  "totalWarnings": 2,
+  "issues": [
+    {
+      "severity": "warning",
+      "entity": "Vehicle",
+      "id": "veh_0jg0qcqpxv7",
+      "message": "Veículo sem aplicações cadastradas: Ford Mustang"
+    },
+    {
+      "severity": "warning",
+      "entity": "Vehicle",
+      "id": "veh_0w51gq8pz52",
+      "message": "Veículo sem aplicações cadastradas: Suzuki Swift Sport"
+    }
+  ],
+  "metrics": {
+    "manufacturers": 64,
+    "catalogs": 3,
+    "sources": 212,
+    "connectors": 58,
+    "vehicles": 2830,
+    "applications": 7994,
+    "products": 595,
+    "fits": 16358,
+    "equivalences": 0
+  }
+}
