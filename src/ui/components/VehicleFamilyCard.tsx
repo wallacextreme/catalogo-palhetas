@@ -2,15 +2,19 @@ import { useState } from 'preact/hooks';
 import type {
   BrandProduct,
   CatalogSource,
+  MatchedApplicationFit,
   TechnicalVariant,
   VehicleFamilyResult,
 } from '@/domain/types';
 import { formatMillimeters } from '@/domain/measures';
+import { ConnectorBadge } from './ConnectorBadge';
 
 interface VehicleFamilyCardProps {
   family: VehicleFamilyResult;
   onShowSources: (sources: CatalogSource[], title: string) => void;
+  onShowSourcesByIds?: (sourceIds: string[], title: string) => void;
   onSelectProduct?: (product: BrandProduct) => void;
+  onSelectRelatedFamily?: (query: string) => void;
 }
 
 /** Formata a ficha técnica de uma variante individual para cópia/WhatsApp no balcão */
@@ -35,25 +39,33 @@ export function formatVariantTechnicalSheet(
     const pair = frontApps.find((a) => a.position === 'par_dianteiro');
 
     if (driver?.inches) {
-      lines.push(`Motorista: ${driver.inches}"`);
+      const mmPart = driver.millimeters ? ` (${formatMillimeters(driver.millimeters)} mm)` : '';
+      lines.push(`Motorista: ${driver.inches}"${mmPart}`);
     }
     if (passenger?.inches) {
-      lines.push(`Passageiro: ${passenger.inches}"`);
+      const mmPart = passenger.millimeters ? ` (${formatMillimeters(passenger.millimeters)} mm)` : '';
+      lines.push(`Passageiro: ${passenger.inches}"${mmPart}`);
     }
     if (pair?.inches) {
-      lines.push(`Par dianteiro: ${pair.inches}"`);
+      const mmPart = pair.millimeters ? ` (${formatMillimeters(pair.millimeters)} mm)` : '';
+      lines.push(`Par dianteiro: ${pair.inches}"${mmPart}`);
     }
     for (const a of frontApps) {
       if (!['motorista', 'passageiro', 'par_dianteiro'].includes(a.position)) {
         lines.push(`${a.positionLabel}: ${a.inches ? `${a.inches}"` : a.sizeLabel || ''}`);
       }
     }
+    const frontConn = driver?.connectorRaw || driver?.connector?.code || pair?.connectorRaw || pair?.connector?.code;
+    if (frontConn) {
+      lines.push(`Encaixe: ${frontConn}`);
+    }
     lines.push('');
   }
 
   if (rearApp) {
     lines.push('Traseira');
-    lines.push(`Traseira: ${rearApp.inches ? `${rearApp.inches}"` : rearApp.sizeLabel || 'Específica'}`);
+    const rearMm = rearApp.millimeters ? ` (${formatMillimeters(rearApp.millimeters)} mm)` : '';
+    lines.push(`Traseira: ${rearApp.inches ? `${rearApp.inches}"${rearMm}` : rearApp.sizeLabel || 'Específica'}`);
     lines.push('');
   }
 
@@ -80,6 +92,11 @@ export function formatVariantTechnicalSheet(
     if (brandLines[b] && brandLines[b].length > 0) {
       lines.push(`${b}: ${brandLines[b].join(' / ')}`);
     }
+  }
+
+  if (variant.hasTransitionWarning && variant.transitionWarningText) {
+    lines.push('');
+    lines.push(`⚠ ${variant.transitionWarningText}`);
   }
 
   const hasDivergence =
@@ -124,7 +141,9 @@ export function formatFamilyTechnicalSheet(family: VehicleFamilyResult): string 
 export function VehicleFamilyCard({
   family,
   onShowSources,
+  onShowSourcesByIds,
   onSelectProduct,
+  onSelectRelatedFamily,
 }: VehicleFamilyCardProps) {
   // Apenas a primeira variante vem expandida por padrão em busca ampla,
   // ou a variante única filtrada pelo ano.
@@ -190,7 +209,7 @@ export function VehicleFamilyCard({
 
   // Separa e agrupa os produtos de todos os itens da variante por fabricante (DYNA, CINOY, VETOR)
   const getVariantProductsByBrand = (variant: TechnicalVariant) => {
-    const brandMap: Record<string, Array<{ posLabel: string; fit: any }>> = {
+    const brandMap: Record<string, Array<{ posLabel: string; fit: MatchedApplicationFit }>> = {
       DYNA: [],
       CINOY: [],
       VETOR: [],
@@ -328,6 +347,21 @@ export function VehicleFamilyCard({
                   <span>✓</span> {family.governance.confirmedCatalogsCount} catálogos confirmados
                 </span>
               )}
+              {family.hasTransitionWarning && (
+                <span
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-300 border border-amber-400 dark:border-amber-500/40 text-[11px] font-bold"
+                  title={
+                    family.transitionYears && family.transitionYears.length > 0
+                      ? `Anos de transição de geração/encaixe: ${family.transitionYears.join(', ')}`
+                      : 'Mudança de geração ou encaixe no mesmo ano'
+                  }
+                >
+                  <span>⚡</span> Ano de Transição
+                  {family.transitionYears && family.transitionYears.length > 0
+                    ? ` (${family.transitionYears.slice(0, 3).join(', ')})`
+                    : ''}
+                </span>
+              )}
               {family.governance.documentaryDivergencesCount > 0 && (
                 <button
                   type="button"
@@ -353,13 +387,16 @@ export function VehicleFamilyCard({
             <div className="flex flex-wrap items-center gap-1.5 mt-2 text-xs">
               <span className="text-slate-500 dark:text-slate-400 font-medium">Modelos relacionados:</span>
               {family.relatedFamilies.map((rel) => (
-                <span
+                <button
                   key={rel}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium text-[11px] border border-slate-300 dark:border-slate-700 shadow-2xs"
+                  type="button"
+                  onClick={() => onSelectRelatedFamily?.(rel)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-200/80 hover:bg-amber-500/15 dark:bg-slate-800 dark:hover:bg-amber-500/20 text-slate-700 hover:text-amber-800 dark:text-slate-300 dark:hover:text-amber-300 font-medium text-[11px] border border-slate-300 hover:border-amber-400 dark:border-slate-700 dark:hover:border-amber-500/40 shadow-2xs transition-colors cursor-pointer"
+                  title={`Pesquisar ${rel}`}
                 >
                   <span>{rel}</span>
                   <span className="text-amber-600 dark:text-amber-400 font-bold">→</span>
-                </span>
+                </button>
               ))}
             </div>
           )}
@@ -378,24 +415,28 @@ export function VehicleFamilyCard({
             title="Copiar todas as variantes e códigos da família para WhatsApp ou orçamento"
           >
             <span aria-hidden="true">{copiedFamily ? '✓' : '📋'}</span>
-            <span>{copiedFamily ? 'Copiado!' : 'Copiar Ficha'}</span>
+            <span>{copiedFamily ? 'Copiado!' : 'Copiar p/ WhatsApp'}</span>
           </button>
 
           <button
             type="button"
-            onClick={() =>
-              onShowSources(
-                family.sourceIds.map((id) => ({
-                  id,
-                  catalogId: '',
-                  manufacturer: family.brand,
-                  catalogName: 'Catálogo Oficial de Fabricante',
-                  catalogYear: 2025,
-                  page: 1,
-                })),
-                `Fontes Oficiais: ${family.fullName}`,
-              )
-            }
+            onClick={() => {
+              if (onShowSourcesByIds) {
+                onShowSourcesByIds(family.sourceIds, `Fontes Oficiais: ${family.fullName}`);
+              } else {
+                onShowSources(
+                  family.sourceIds.map((id) => ({
+                    id,
+                    catalogId: '',
+                    manufacturer: family.brand,
+                    catalogName: 'Catálogo Oficial de Fabricante',
+                    catalogYear: 2025,
+                    page: 1,
+                  })),
+                  `Fontes Oficiais: ${family.fullName}`,
+                );
+              }
+            }}
             className="text-xs px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-700 flex items-center gap-1.5 transition-colors font-medium cursor-pointer"
             title="Ver rastreabilidade de todas as páginas onde a família é citada"
           >
@@ -533,6 +574,16 @@ export function VehicleFamilyCard({
                     {variant.label}
                   </span>
 
+                  {/* Alerta de Ano de Transição na Variante */}
+                  {variant.hasTransitionWarning && (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-300 border border-amber-400 dark:border-amber-500/40 text-[10px] font-bold"
+                      title={variant.transitionWarningText}
+                    >
+                      <span>⚡</span> Ano de Transição
+                    </span>
+                  )}
+
                   {/* Medidas em Super Destaque Visual */}
                   <div className="flex items-center gap-2">
                     {driver?.inches && passenger?.inches ? (
@@ -586,6 +637,14 @@ export function VehicleFamilyCard({
               {/* 5. CONTEÚDO EXPANDIDO: EXPERIÊNCIA DE BALCÃO RÁPIDA */}
               {isExpanded && (
                 <div className="px-5 pb-5 pt-3 bg-slate-50/60 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-800/80 space-y-4">
+                  {/* Alerta amarelo de Ano de Transição se aplicável */}
+                  {variant.hasTransitionWarning && variant.transitionWarningText && (
+                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2.5 text-xs text-amber-900 dark:text-amber-300">
+                      <span className="text-base" aria-hidden="true">⚡</span>
+                      <span className="font-semibold">{variant.transitionWarningText}</span>
+                    </div>
+                  )}
+
                   {/* Grade de Posições com Medidas em Destaque Gigante */}
                   <div>
                     <div className="flex items-center justify-between gap-2 mb-2.5">
@@ -603,7 +662,7 @@ export function VehicleFamilyCard({
                         title="Copiar dados desta variante para WhatsApp ou cliente"
                       >
                         <span aria-hidden="true">{copiedVariantId === variant.id ? '✓' : '📋'}</span>
-                        <span>{copiedVariantId === variant.id ? 'Copiado!' : 'Copiar Esta Variante'}</span>
+                        <span>{copiedVariantId === variant.id ? 'Copiado!' : 'Copiar p/ WhatsApp'}</span>
                       </button>
                     </div>
 
@@ -635,13 +694,15 @@ export function VehicleFamilyCard({
                                 </div>
                               </div>
 
-                              <div className="text-right">
+                              <div className="text-right flex flex-col items-end gap-1">
                                 <span className="block text-[10px] text-slate-400 dark:text-slate-500 uppercase font-semibold">
                                   Encaixe
                                 </span>
-                                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                                  {app.connectorRaw || app.connector?.code || 'Padrão (G)'}
-                                </span>
+                                <ConnectorBadge
+                                  code={app.connectorRaw || app.connector?.code || 'Padrão (G)'}
+                                  name={app.connector?.name}
+                                  compact
+                                />
                               </div>
                             </div>
 
@@ -680,13 +741,15 @@ export function VehicleFamilyCard({
                                 </div>
                               </div>
 
-                              <div className="text-right">
+                              <div className="text-right flex flex-col items-end gap-1">
                                 <span className="block text-[10px] text-slate-400 dark:text-slate-500 uppercase font-semibold">
                                   Encaixe
                                 </span>
-                                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                                  {rearApp.connectorRaw || rearApp.connector?.code || 'Específico'}
-                                </span>
+                                <ConnectorBadge
+                                  code={rearApp.connectorRaw || rearApp.connector?.code || 'Específico'}
+                                  name={rearApp.connector?.name}
+                                  compact
+                                />
                               </div>
                             </div>
 

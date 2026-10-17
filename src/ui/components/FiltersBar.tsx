@@ -235,9 +235,10 @@ export function FiltersBar({ filters, brands, onChange, onReset, onApply }: Filt
           <label className="block text-slate-600 dark:text-slate-400 mb-1 text-[11px] font-medium">Tipo de Relação</label>
           <select
             value={filters.relationType ?? ''}
-            onChange={(e) =>
-              onChange({ ...filters, relationType: ((e.target as HTMLSelectElement).value as any) || undefined })
-            }
+            onChange={(e) => {
+              const val = (e.target as HTMLSelectElement).value as SearchFilters['relationType'] | '';
+              onChange({ ...filters, relationType: val || undefined });
+            }}
             className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-900 dark:text-slate-200 focus:outline-none focus:border-amber-500 text-xs transition-colors"
           >
             <option value="">Todas as Relações</option>

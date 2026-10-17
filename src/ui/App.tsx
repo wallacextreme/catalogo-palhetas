@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'preact/hooks';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks';
 import type { BrandProduct, CatalogSource, Vehicle } from '@/domain/types';
 import { CatalogService } from '@/services/catalog-service';
 import { extractYearFromQuery, type SearchFilters, type SearchResultItem } from '@/search/search-engine';
@@ -9,10 +9,13 @@ import { CrossReferenceTable } from './components/CrossReferenceTable';
 import { VehicleFamilyCard } from './components/VehicleFamilyCard';
 import { TraceabilityModal } from './components/TraceabilityModal';
 import { ProductDetailModal, type ProductApplicationUsage } from './components/ProductDetailModal';
+import { ConnectorBadge } from './components/ConnectorBadge';
+import { formatMillimeters } from '@/domain/measures';
 
 export function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Tema Dark / Light
   const [isDark, setIsDark] = useState(() => {
@@ -59,11 +62,13 @@ export function App() {
     manufacturerName?: string;
     sources: CatalogSource[];
     usages: ProductApplicationUsage[];
+    equivalentProductsByBrand: Record<string, BrandProduct[]>;
   }>({
     isOpen: false,
     product: null,
     sources: [],
     usages: [],
+    equivalentProductsByBrand: {},
   });
 
   // Inicialização do Catálogo
@@ -87,9 +92,10 @@ export function App() {
       // Busca inicial padrão
       const initialResults = catalogService.search('', {});
       setResults(initialResults);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Erro ao inicializar catálogo:', err);
-      setInitError(err.message || 'Erro desconhecido ao carregar base de dados');
+      const message = err instanceof Error ? err.message : 'Erro desconhecido ao carregar base de dados';
+      setInitError(message);
     } finally {
       setIsInitializing(false);
     }
@@ -109,6 +115,39 @@ export function App() {
       window.removeEventListener('offline', handleOffline);
     };
   }, [initializeCatalog]);
+
+  // Atalhos globais de teclado para Balcão (F2, Ctrl+K / Cmd+K, Esc)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isCtrlK = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k';
+      const isF2 = e.key === 'F2';
+
+      if (isCtrlK || isF2) {
+        e.preventDefault();
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
+          searchInputRef.current.select();
+        }
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        if (productDetailModal.isOpen) {
+          setProductDetailModal((prev) => ({ ...prev, isOpen: false }));
+          return;
+        }
+        if (traceabilityModal.isOpen) {
+          setTraceabilityModal((prev) => ({ ...prev, isOpen: false }));
+          return;
+        }
+        setSearchQuery('');
+        setFilters({});
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [productDetailModal.isOpen, traceabilityModal.isOpen]);
 
   // Aplica classe no <html> para tema
   useEffect(() => {
@@ -161,6 +200,16 @@ export function App() {
     });
   }, []);
 
+  const handleShowSourcesByIds = useCallback(async (sourceIds: string[], title: string) => {
+    const catalogService = CatalogService.getInstance();
+    const realSources = await catalogService.getSourcesByIds(sourceIds);
+    setTraceabilityModal({
+      isOpen: true,
+      sources: realSources,
+      title,
+    });
+  }, []);
+
   const handleCloseTraceability = useCallback(() => {
     setTraceabilityModal((prev) => ({ ...prev, isOpen: false }));
   }, []);
@@ -171,6 +220,7 @@ export function App() {
     const mfrName = catalogService.getManufacturerName(product.manufacturerId);
     const sources = await catalogService.getSourcesByIds(product.sourceIds);
     const usages = await catalogService.getProductApplications(product.id);
+    const equivalentProductsByBrand = catalogService.getEquivalentProductsForProduct(product.id);
 
     setProductDetailModal({
       isOpen: true,
@@ -178,6 +228,7 @@ export function App() {
       manufacturerName: mfrName,
       sources,
       usages,
+      equivalentProductsByBrand,
     });
   }, []);
 
@@ -187,6 +238,11 @@ export function App() {
 
   const handleSelectVehicleFromProduct = useCallback((vehicle: Vehicle) => {
     setSearchQuery(`${vehicle.brand} ${vehicle.model}`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const handleSelectRelatedFamily = useCallback((relatedQuery: string) => {
+    setSearchQuery(relatedQuery);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
@@ -303,6 +359,7 @@ export function App() {
             onChange={setSearchQuery}
             onClear={() => setSearchQuery('')}
             isLoading={isSearching}
+            inputRef={searchInputRef}
           />
 
           <FiltersBar
@@ -364,7 +421,7 @@ export function App() {
               }}
               className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 font-semibold transition-colors cursor-pointer"
             >
-              Limpar busca e filtros
+              Limpar busca e filtros (Esc)
             </button>
           )}
         </section>
@@ -378,7 +435,9 @@ export function App() {
                   key={item.id}
                   family={item.family}
                   onShowSources={handleShowSources}
+                  onShowSourcesByIds={handleShowSourcesByIds}
                   onSelectProduct={handleSelectProduct}
+                  onSelectRelatedFamily={handleSelectRelatedFamily}
                 />
               );
             }
@@ -390,42 +449,102 @@ export function App() {
                   vehicle={item.vehicle}
                   applications={item.matchedApplications}
                   onShowSources={handleShowSources}
+                  onShowSourcesByIds={handleShowSourcesByIds}
                   onSelectProduct={handleSelectProduct}
                 />
               );
             }
 
             if (item.type === 'product' && item.product) {
+              const prod = item.product;
+              const mfrBrand = prod.manufacturerId.toUpperCase().includes('DYNA')
+                ? 'DYNA'
+                : prod.manufacturerId.toUpperCase().includes('CINOY')
+                  ? 'CINOY'
+                  : 'VETOR';
+              const eqMap = item.equivalentProductsByBrand || {};
+
               return (
                 <div
                   key={item.id}
-                  className="industrial-card rounded-2xl p-5 border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-4"
+                  className="industrial-card rounded-2xl p-5 border border-slate-200 dark:border-slate-800 space-y-4 bg-white dark:bg-slate-900/60"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 font-bold text-lg">
-                      🪶
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-bold text-lg text-slate-900 dark:text-slate-100">
-                          {item.product.code}
-                        </span>
-                        <span className="text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-medium">
-                          {item.product.family || 'Palheta'}
-                        </span>
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-amber-400 font-bold text-lg">
+                        🪶
                       </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                        {item.product.mainApplicationsText || 'Palheta com aplicação técnica documentada.'}
-                      </p>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold border ${
+                              mfrBrand === 'DYNA'
+                                ? 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-yellow-500/15 dark:text-yellow-400 dark:border-yellow-500/30'
+                                : mfrBrand === 'CINOY'
+                                  ? 'bg-red-100 text-red-800 border-red-300 dark:bg-red-500/15 dark:text-red-400 dark:border-red-500/30'
+                                  : 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-500/15 dark:text-blue-400 dark:border-blue-500/30'
+                            }`}
+                          >
+                            {mfrBrand}
+                          </span>
+                          <span className="font-mono font-bold text-lg text-slate-900 dark:text-slate-100">
+                            {prod.code}
+                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-medium">
+                            {prod.family || 'Palheta'}
+                          </span>
+                          {prod.inches && prod.inches.length > 0 && (
+                            <span className="font-mono text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">
+                              {prod.inches.map((i) => `${i}"`).join(' / ')}{' '}
+                              {prod.millimeters && prod.millimeters.length > 0
+                                ? `(${prod.millimeters.map((m) => formatMillimeters(m)).join(' / ')} mm)`
+                                : ''}
+                            </span>
+                          )}
+                          {prod.armCompatibility && prod.armCompatibility.length > 0 && (
+                            <ConnectorBadge code={prod.armCompatibility.join(', ')} compact />
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          {prod.mainApplicationsText || 'Palheta com aplicação técnica documentada.'}
+                        </p>
+                      </div>
                     </div>
+
+                    <button
+                      onClick={() => handleSelectProduct(prod)}
+                      className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition-colors flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      <span>🔍</span> Ver Aplicações & Equivalentes
+                    </button>
                   </div>
 
-                  <button
-                    onClick={() => handleSelectProduct(item.product!)}
-                    className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition-colors flex items-center gap-1.5 shadow-sm"
-                  >
-                    <span>🔍</span> Ver Aplicações & Veículos
-                  </button>
+                  {/* Equivalência Direta O(1) no Card de Produto */}
+                  <div className="pt-3 border-t border-slate-200 dark:border-slate-800/80 flex flex-wrap items-center gap-3 text-xs">
+                    <span className="font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[10px]">
+                      🔄 Equivalentes Diretos:
+                    </span>
+                    {(['DYNA', 'CINOY', 'VETOR'] as const).map((b) => {
+                      const eqList = eqMap[b] || [];
+                      if (eqList.length === 0) return null;
+                      return (
+                        <div key={b} className="inline-flex items-center gap-1.5">
+                          <span className="font-bold text-[10px] text-slate-500 dark:text-slate-400">{b}:</span>
+                          {eqList.slice(0, 4).map((eq) => (
+                            <button
+                              key={eq.id}
+                              type="button"
+                              onClick={() => handleSelectProduct(eq)}
+                              className="px-2 py-0.5 rounded bg-slate-100 hover:bg-amber-500/15 dark:bg-slate-800 dark:hover:bg-amber-500/20 border border-slate-300 dark:border-slate-700 font-mono font-bold text-xs text-slate-800 dark:text-slate-200 transition-colors cursor-pointer"
+                              title={`Abrir ficha de ${eq.code}`}
+                            >
+                              {eq.code}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             }
@@ -450,7 +569,7 @@ export function App() {
                     setSearchQuery('');
                     setFilters({});
                   }}
-                  className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold transition-colors border border-slate-300 dark:border-slate-700"
+                  className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-semibold transition-colors border border-slate-300 dark:border-slate-700 cursor-pointer"
                 >
                   Restaurar Todos os Veículos
                 </button>
@@ -463,7 +582,7 @@ export function App() {
             <div className="text-center pt-4">
               <button
                 onClick={() => setDisplayLimit((prev) => prev + 20)}
-                className="px-6 py-2.5 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-300 dark:border-slate-700 shadow-md hover:border-amber-500/50 transition-all"
+                className="px-6 py-2.5 rounded-xl bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold border border-slate-300 dark:border-slate-700 shadow-md hover:border-amber-500/50 transition-all cursor-pointer"
               >
                 Carregar mais veículos ({results.length - displayLimit} restantes)...
               </button>
@@ -507,8 +626,10 @@ export function App() {
         manufacturerName={productDetailModal.manufacturerName}
         sources={productDetailModal.sources}
         usages={productDetailModal.usages}
+        equivalentProductsByBrand={productDetailModal.equivalentProductsByBrand}
         onClose={handleCloseProductDetail}
         onSelectVehicle={handleSelectVehicleFromProduct}
+        onSelectProduct={handleSelectProduct}
         onShowSources={handleShowSources}
       />
     </div>

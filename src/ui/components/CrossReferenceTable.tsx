@@ -1,7 +1,8 @@
-import { useMemo } from 'preact/hooks';
+import { useMemo, useState } from 'preact/hooks';
 import type { BrandProduct, CatalogSource, Connector, RelationType, Vehicle, VehicleApplication } from '@/domain/types';
 import { formatMillimeters, formatInches } from '@/domain/measures';
 import { formatYearRange } from '@/domain/years';
+import { ConnectorBadge } from './ConnectorBadge';
 
 interface ProductMatchItem {
   product: BrandProduct;
@@ -21,10 +22,19 @@ interface CrossReferenceTableProps {
   vehicle: Vehicle;
   applications: ApplicationGroup[];
   onShowSources: (sources: CatalogSource[], title: string) => void;
+  onShowSourcesByIds?: (sourceIds: string[], title: string) => void;
   onSelectProduct?: (product: BrandProduct) => void;
 }
 
-export function CrossReferenceTable({ vehicle, applications, onShowSources, onSelectProduct }: CrossReferenceTableProps) {
+export function CrossReferenceTable({
+  vehicle,
+  applications,
+  onShowSources,
+  onShowSourcesByIds,
+  onSelectProduct,
+}: CrossReferenceTableProps) {
+  const [copied, setCopied] = useState(false);
+
   const positionLabels: Record<string, string> = {
     motorista: 'Motorista',
     passageiro: 'Passageiro',
@@ -150,6 +160,7 @@ export function CrossReferenceTable({ vehicle, applications, onShowSources, onSe
 
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={() => {
               const text = [
                 `🚗 ${vehicle.brand} ${vehicle.model} (${formatYearRange(vehicle)})`,
@@ -161,29 +172,39 @@ export function CrossReferenceTable({ vehicle, applications, onShowSources, onSe
                 }),
               ].join('\n');
               navigator.clipboard?.writeText(text);
-              alert('Ficha de palhetas copiada para a área de transferência!');
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
             }}
-            className="text-xs px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-700 flex items-center gap-1.5 transition-colors font-medium"
+            className={`text-xs px-3 py-1.5 rounded-lg border shadow-2xs flex items-center gap-1.5 transition-colors font-medium cursor-pointer ${
+              copied
+                ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/40'
+                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-700'
+            }`}
             title="Copiar dados para enviar ao cliente ou WhatsApp"
           >
-            <span>📋</span> Copiar Ficha
+            <span>{copied ? '✓' : '📋'}</span> {copied ? 'Copiado!' : 'Copiar Ficha'}
           </button>
 
           <button
-            onClick={() =>
-              onShowSources(
-                vehicle.sourceIds.map((id) => ({
-                  id,
-                  catalogId: '',
-                  manufacturer: vehicle.brand,
-                  catalogName: 'Catálogo Oficial',
-                  catalogYear: 2025,
-                  page: 1,
-                })),
-                `Fontes Oficiais: ${vehicle.brand} ${vehicle.model}`,
-              )
-            }
-            className="text-xs px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-700 flex items-center gap-1.5 transition-colors font-medium"
+            type="button"
+            onClick={() => {
+              if (onShowSourcesByIds) {
+                onShowSourcesByIds(vehicle.sourceIds, `Fontes Oficiais: ${vehicle.brand} ${vehicle.model}`);
+              } else {
+                onShowSources(
+                  vehicle.sourceIds.map((id) => ({
+                    id,
+                    catalogId: '',
+                    manufacturer: vehicle.brand,
+                    catalogName: 'Catálogo Oficial',
+                    catalogYear: 2025,
+                    page: 1,
+                  })),
+                  `Fontes Oficiais: ${vehicle.brand} ${vehicle.model}`,
+                );
+              }
+            }}
+            className="text-xs px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-700 flex items-center gap-1.5 transition-colors font-medium cursor-pointer"
           >
             <span>📄</span> Rastreabilidade do Veículo
           </button>
@@ -224,17 +245,14 @@ export function CrossReferenceTable({ vehicle, applications, onShowSources, onSe
                 </div>
 
                 <div>
-                  <span className="block text-slate-500 dark:text-slate-400 text-[11px] uppercase tracking-wider font-semibold">
+                  <span className="block text-slate-500 dark:text-slate-400 text-[11px] uppercase tracking-wider font-semibold mb-1">
                     Conexão / Encaixe
                   </span>
-                  <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                    {app.connectorRaw || appGroup.connector?.code || 'Não informado'}
-                    {appGroup.connector?.name && (
-                      <span className="text-xs font-normal text-slate-500 dark:text-slate-400 block truncate">
-                        {appGroup.connector.name}
-                      </span>
-                    )}
-                  </span>
+                  <ConnectorBadge
+                    code={app.connectorRaw || appGroup.connector?.code || 'Padrão (G)'}
+                    name={appGroup.connector?.name}
+                    compact
+                  />
                 </div>
 
                 <div>
