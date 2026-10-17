@@ -1,9 +1,57 @@
+# Dependências e Pacotes
 node_modules/
+.pnp
+.pnp.js
+
+# Builds de Produção (Web / PWA / Tauri Desktop)
 dist/
+dist-ssr/
 src-tauri/target/
 src-tauri/gen/
-*.log
-.DS_Store
-# Dados brutos são regeneráveis a partir dos PDFs (bun run data:extract)
-data/raw/*.raw.json
+*.exe
+*.msi
+*.AppImage
+*.dmg
+
+# Variáveis de Ambiente, Credenciais e Chaves Privadas (NUNCA versionar)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.cer
+*.crt
+secrets/
+credentials/
+
+# Bancos de Dados Locais, Backups de Balcão e Dados Privados do Usuário
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*backup*.json
+*balcao-backup*.json
+local-data/
+user-data/
+
+# Catálogos Brutos, PDFs Originais e Scripts Temporários de Extração
 *.pdf
+data/raw/*.raw.json
+scratch/
+
+# Logs, Caches e Sistema Operacional
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+bun.lockb.bak
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
