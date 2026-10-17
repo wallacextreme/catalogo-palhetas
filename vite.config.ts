@@ -48,6 +48,9 @@ export default defineConfig({
     port: 5173,
     host: true,
     open: false,
+    watch: {
+      ignored: ['**/src-tauri/target/**', '**/dist/**'],
+    },
   },
   build: {
     target: 'es2022',

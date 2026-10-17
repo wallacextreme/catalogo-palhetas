@@ -82,25 +82,16 @@ export function FiltersBar({ filters, brands, onChange, onReset, onApply }: Filt
             <button
               type="button"
               onClick={onReset}
-              className="text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors font-medium text-xs cursor-pointer"
+              className="text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors font-medium text-xs cursor-pointer flex items-center gap-1"
             >
-              Limpar Filtros
+              <span>✕</span> Limpar Filtros
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={onApply}
-            className="px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 font-bold text-xs transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-            title="Aplicar filtros combinados"
-          >
-            <span>🔍</span> Filtrar
-          </button>
         </div>
       </div>
 
-      {/* Grid com os 6 campos */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
+      {/* Grid com os 7 campos combinados */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2.5">
         {/* Montadora do Veículo */}
         <div>
           <label className="block text-slate-600 dark:text-slate-400 mb-1 text-[11px] font-medium">Montadora</label>
@@ -148,6 +139,36 @@ export function FiltersBar({ filters, brands, onChange, onReset, onApply }: Filt
                 onClick={() => onChange({ ...filters, model: undefined })}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xs"
                 title="Limpar modelo"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Ano do Veículo */}
+        <div>
+          <label className="block text-slate-600 dark:text-slate-400 mb-1 text-[11px] font-medium">Ano</label>
+          <div className="relative">
+            <input
+              type="number"
+              min="1970"
+              max="2030"
+              value={filters.year ? String(filters.year) : ''}
+              placeholder="Ex: 2015"
+              onInput={(e) => {
+                const val = (e.target as HTMLInputElement).value;
+                onChange({ ...filters, year: val ? Number(val) : undefined });
+              }}
+              onKeyDown={handleKeyDown}
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg pl-2.5 pr-7 py-1.5 text-slate-900 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-amber-500 text-xs transition-colors"
+            />
+            {filters.year && (
+              <button
+                type="button"
+                onClick={() => onChange({ ...filters, year: undefined })}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xs"
+                title="Limpar ano"
               >
                 ✕
               </button>

@@ -34,11 +34,17 @@ export function nameKey(input: string): string {
   return normalizeText(input);
 }
 
-/** Capitaliza nomes de marca impressos em MAIÚSCULAS ("GENERAL MOTORS" → "General Motors"). */
+const PRESERVED_ACRONYMS = new Set(['SW4', 'BMW', 'GWM', 'BYD', 'JAC', 'JPX', 'SUV', '4X4']);
+
+/** Capitaliza nomes de marca e modelos impressos em MAIÚSCULAS preservando siglas automotivas. */
 export function titleCase(input: string): string {
   return input
-    .toLowerCase()
     .split(/(\s+|-|\/)/)
-    .map((part) => (part.length > 0 ? part.charAt(0).toUpperCase() + part.slice(1) : part))
+    .map((part) => {
+      const upper = part.toUpperCase();
+      if (PRESERVED_ACRONYMS.has(upper)) return upper;
+      const lower = part.toLowerCase();
+      return lower.length > 0 ? lower.charAt(0).toUpperCase() + lower.slice(1) : lower;
+    })
     .join('');
 }

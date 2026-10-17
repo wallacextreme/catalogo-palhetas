@@ -6,7 +6,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-Strict_Mode-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](#)
 [![Preact](https://img.shields.io/badge/Frontend-Preact-673ab8?style=for-the-badge&logo=preact&logoColor=white)](#)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS_v4-06b6d4?style=for-the-badge&logo=tailwindcss&logoColor=white)](#)
-[![Testes Automatizados](https://img.shields.io/badge/Testes-29_Passed-success?style=for-the-badge)](#)
+[![Testes Automatizados](https://img.shields.io/badge/Testes-115_Passed-success?style=for-the-badge)](#)
 [![Licença](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
 Sistema profissional de alta fidelidade para **consulta técnica**, **rastreabilidade oficial** e **equivalência cruzada (cross-reference)** multi-catálogo de palhetas limpadoras de para-brisa automotivas. Consolida em tempo real as bases oficiais de fabricantes homologados: **DYNA (Catálogo 2025)**, **CINOY (Catálogo 2023)** e **VETOR (Catálogo 2025)**.
@@ -90,39 +90,17 @@ Os dados foram extraídos e tratados a partir de catálogos oficiais primários:
 
 ## 🧪 Qualidade de Código & Suíte de Testes
 
-O projeto conta com **29 testes automatizados** cobrindo normalização, conversão dimensional, exclusão de linha pesada, resolução de repositórios e motor de busca:
+O projeto conta com **115 testes automatizados** e **167.962 asserções** distribuídas em 8 arquivos cobrindo normalização, conversão dimensional, exclusão de linha pesada, resolução de repositórios, motor de busca exato por família, governança de dados e hardening:
 
 ```bash
 bun test
 ```
 
 ```text
-tests/integration/catalog-service.test.ts:
-  ✓ provides dataset summary metrics
-  ✓ lists automotive brands in alphabetical order and strictly contains only manufacturers
-  ✓ lists models by brand
-  ✓ resolves multi-manufacturer cross reference for Onix
-  ✓ resolves product by exact code and tracks official catalog source
-
-tests/unit/domain.test.ts:
-  ✓ normalizes accents, spaces, and punctuation
-  ✓ converts inches to millimeters precisely
-  ✓ validates plausible automotive wiper sizes
-  ✓ parses various catalog year formats
-  ✓ identifies allowed vehicle categories and heavy line keywords
-  ✓ produces exclusion reasons correctly
-
-tests/unit/search.test.ts:
-  ✓ finds Chevrolet Onix by exact model name and year query
-  ✓ finds product by exact, lower-case, and compact code (e.g. YN-PS2416B, SD6)
-  ✓ applies combined filters correctly (Brand + Year)
-  ✓ decouples car models (e.g. Etios without Hilux/SW4)
-  ✓ decouples HILUX search completely from COROLLA
-  ✓ decouples GOL search completely from GOLF, KADETT GL, and GL 4MATIC
-  ✓ filters specifically by model (e.g. HILUX) when main search query is empty
-  ✓ combines Brand and Model filters when main search query is empty
-
- 29 pass, 0 fail (100% de aprovação)
+ 115 pass
+ 0 fail
+ 167962 expect() calls
+Ran 115 tests across 8 files. (~2.6s)
 ```
 
 ---

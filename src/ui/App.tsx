@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useCallback } from 'preact/hooks';
 import type { BrandProduct, CatalogSource, Vehicle } from '@/domain/types';
 import { CatalogService } from '@/services/catalog-service';
-import type { SearchFilters, SearchResultItem } from '@/search/search-engine';
+import { extractYearFromQuery, type SearchFilters, type SearchResultItem } from '@/search/search-engine';
 import { Header } from './components/Header';
 import { SearchBar } from './components/SearchBar';
 import { FiltersBar } from './components/FiltersBar';
 import { CrossReferenceTable } from './components/CrossReferenceTable';
+import { VehicleFamilyCard } from './components/VehicleFamilyCard';
 import { TraceabilityModal } from './components/TraceabilityModal';
 import { ProductDetailModal, type ProductApplicationUsage } from './components/ProductDetailModal';
 
@@ -189,6 +190,27 @@ export function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
+  // Métricas de Contagem Estruturada
+  const familyCount = useMemo(
+    () => results.filter((r) => r.type === 'vehicle_family').length,
+    [results],
+  );
+  const totalVariantsCount = useMemo(
+    () =>
+      results
+        .filter((r) => r.type === 'vehicle_family')
+        .reduce((acc, r) => acc + (r.family?.variants.length || 0), 0),
+    [results],
+  );
+  const productCount = useMemo(
+    () => results.filter((r) => r.type === 'product').length,
+    [results],
+  );
+  const activeYear = useMemo(
+    () => filters.year ?? extractYearFromQuery(searchQuery),
+    [filters.year, searchQuery],
+  );
+
   // Resultados limitados para renderização ultra-fluida
   const displayedResults = useMemo(() => {
     return results.slice(0, displayLimit);
@@ -295,7 +317,37 @@ export function App() {
         {/* Resumo da Pesquisa */}
         <section className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-slate-800/60">
           <div>
-            Exibindo <span className="font-bold text-slate-900 dark:text-slate-200">{results.length}</span> resultado(s)
+            {familyCount > 0 && productCount === 0 ? (
+              <span>
+                <span className="font-bold text-slate-900 dark:text-slate-200">
+                  {familyCount} {familyCount === 1 ? 'família encontrada' : 'famílias encontradas'}
+                </span>{' '}
+                •{' '}
+                <span className="text-amber-700 dark:text-amber-400 font-semibold">
+                  {activeYear !== undefined
+                    ? `${totalVariantsCount} ${
+                        totalVariantsCount === 1
+                          ? `aplicação compatível com ${activeYear}`
+                          : `aplicações compatíveis com ${activeYear}`
+                      }`
+                    : `${totalVariantsCount} ${
+                        totalVariantsCount === 1
+                          ? 'aplicação técnica'
+                          : 'aplicações técnicas'
+                      }`}
+                </span>
+              </span>
+            ) : productCount > 0 && familyCount === 0 ? (
+              <span>
+                <span className="font-bold text-slate-900 dark:text-slate-200">
+                  {productCount} {productCount === 1 ? 'produto encontrado' : 'produtos encontrados'}
+                </span>
+              </span>
+            ) : (
+              <span>
+                Exibindo <span className="font-bold text-slate-900 dark:text-slate-200">{results.length}</span> resultado(s)
+              </span>
+            )}
             {searchQuery && (
               <span>
                 {' '}
@@ -310,7 +362,7 @@ export function App() {
                 setSearchQuery('');
                 setFilters({});
               }}
-              className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 font-semibold transition-colors"
+              className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 font-semibold transition-colors cursor-pointer"
             >
               Limpar busca e filtros
             </button>
@@ -320,6 +372,17 @@ export function App() {
         {/* Lista de Resultados */}
         <section className="space-y-6">
           {displayedResults.map((item) => {
+            if (item.type === 'vehicle_family' && item.family) {
+              return (
+                <VehicleFamilyCard
+                  key={item.id}
+                  family={item.family}
+                  onShowSources={handleShowSources}
+                  onSelectProduct={handleSelectProduct}
+                />
+              );
+            }
+
             if (item.type === 'vehicle' && item.vehicle && item.matchedApplications) {
               return (
                 <CrossReferenceTable

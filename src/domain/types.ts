@@ -306,3 +306,80 @@ export interface CatalogDataset {
 }
 
 export const DATASET_SCHEMA_VERSION = 1;
+
+/* ------------------------------------------------------------------ */
+/* Consolidação de Famílias e Variantes Técnicas                      */
+/* ------------------------------------------------------------------ */
+
+export interface MatchedApplicationFit {
+  product: BrandProduct;
+  manufacturerCode: string;
+  relationType: FitRelationType;
+  sources: CatalogSource[];
+  notes?: string;
+}
+
+export interface TechnicalVariantApplication {
+  id?: string;
+  position: Position | string;
+  positionLabel: string;
+  inches: number | null;
+  millimeters: number | null;
+  sizeLabel?: string | null;
+  connectorRaw?: string;
+  connector?: Connector;
+  measureOrigin?: MeasureOrigin | string;
+  fits: MatchedApplicationFit[];
+  technicalStatus?: import('./governance').TechnicalStatus;
+  confidenceMatrix?: import('./governance').TechnicalConfidenceMatrix;
+}
+
+export interface TechnicalVariant {
+  id: string;
+  label: string;
+  yearStart: number | null;
+  yearEnd: number | null;
+  yearEndOpen: boolean;
+  yearRaw: string;
+  generation?: string;
+  variant?: string;
+  bodyTypeBadge?: string;
+  vehicle: Vehicle;
+  sourceIds: string[];
+  vehicleIds: string[];
+  applications: TechnicalVariantApplication[];
+  documentedBrands: string[];
+  technicalStatus?: import('./governance').TechnicalStatus;
+}
+
+export interface VehicleFamilyResult {
+  id: string;
+  type: 'vehicle_family';
+  brand: string;
+  model: string;
+  fullName: string;
+  category: VehicleCategory;
+  variants: TechnicalVariant[];
+  totalVariants: number;
+  documentedBrands: string[];
+  sourceIds: string[];
+  selectedYear?: number;
+  relatedFamilies?: string[];
+  governance?: import('./governance').FamilyTechnicalGovernanceSummary;
+}
+
+export type {
+  ConflictClassification,
+  ConflictPriority,
+  RecommendedAction,
+  TechnicalConflictRecord,
+  ConflictRecord,
+  ConflictAuditResult,
+} from './conflicts';
+
+export type {
+  TechnicalStatus,
+  TechnicalConfidenceMatrix,
+  DocumentaryDivergenceDetail,
+  FamilyTechnicalGovernanceSummary,
+} from './governance';

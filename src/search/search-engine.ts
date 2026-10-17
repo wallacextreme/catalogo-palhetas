@@ -8,10 +8,25 @@ import type {
   RelationType,
   Vehicle,
   VehicleApplication,
+  VehicleFamilyResult,
 } from '@/domain/types';
 import { compactCode, normalizeText } from '@/domain/normalize';
 import { yearInRange } from '@/domain/years';
 import { canonicalizeManufacturer } from '@/domain/manufacturers';
+import { cleanVehicleModelFamily } from '@/domain/consolidation';
+
+export function extractYearFromQuery(query: string): number | undefined {
+  const match = query.match(/\b(19\d{2}|20\d{2})\b/);
+  return match ? Number(match[1]) : undefined;
+}
+
+export type SearchMatchLevel =
+  | 'exact_family'
+  | 'exact_model'
+  | 'explicit_variant'
+  | 'token_match'
+  | 'prefix_match'
+  | 'fuzzy_match';
 
 export interface SearchFilters {
   brand?: string;
@@ -27,8 +42,10 @@ export interface SearchFilters {
 
 export interface SearchResultItem {
   id: string;
-  type: 'vehicle' | 'product';
+  type: 'vehicle_family' | 'vehicle' | 'product';
   score: number;
+  matchLevel?: SearchMatchLevel;
+  family?: VehicleFamilyResult;
   vehicle?: Vehicle;
   product?: BrandProduct;
   matchedApplications?: Array<{
@@ -231,12 +248,23 @@ export class CatalogSearchEngine {
         if (!isProductSearch && queryTerms.length > 0 && !this.vehicleMatchesQuery(v, queryTerms)) {
           continue;
         }
-        const item = this.buildVehicleResult(v, r.score);
+        const { score: intentScore, matchLevel } = this.calculateVehicleIntentScore(
+          v,
+          trimmed,
+          queryTerms,
+          r.score,
+        );
+        const item = this.buildVehicleResult(v, intentScore, matchLevel);
         if (item && this.matchesFilters(item, filters)) {
           results.push(item);
         }
       } else if (this.productsById.has(r.id)) {
         const p = this.productsById.get(r.id)!;
+        // Se a busca principal é por veículo, impede que códigos numéricos residuais (ex: '2015')
+        // poluam o resultado com produtos aleatórios cujo código não foi pesquisado
+        if (!isProductSearch && trimmed && !this.productMatchesQuery(p, queryTerms, trimmed)) {
+          continue;
+        }
         const item = this.buildProductResult(p, r.score);
         if (item && this.matchesFilters(item, filters)) {
           results.push(item);
@@ -249,12 +277,112 @@ export class CatalogSearchEngine {
     return results;
   }
 
+  private calculateVehicleIntentScore(
+    v: Vehicle,
+    rawQuery: string,
+    terms: string[],
+    baseScore = 1,
+  ): { score: number; matchLevel: SearchMatchLevel } {
+    const normQuery = normalizeText(rawQuery).trim();
+    const cleanFam = cleanVehicleModelFamily(v.model);
+    const cleanBrand = normalizeText(canonicalizeManufacturer(v.brand) || v.brand);
+    const normModel = normalizeText(v.model).trim();
+    const fullFamilyName = `${cleanBrand} ${cleanFam}`.trim();
+    const fullModelName = `${cleanBrand} ${normModel}`.trim();
+
+    // 1. Explicit submodel variant requested (e.g. "ONIX PLUS", "COROLLA CROSS", "HB20S")
+    const isExplicitVariant =
+      ['plus', 'cross', 'fielder', 'sw4', 'sw'].some((sub) =>
+        normQuery.includes(sub) && (cleanFam.includes(sub) || normModel.includes(sub)),
+      ) || (normQuery.includes('hb20s') && cleanFam === 'hb20s');
+
+    if (
+      isExplicitVariant &&
+      (normQuery === cleanFam ||
+        normQuery === fullFamilyName ||
+        normQuery === normModel ||
+        normQuery === fullModelName)
+    ) {
+      return { score: 110 + baseScore, matchLevel: 'explicit_variant' };
+    }
+
+    // 2. Exact match on normalized family (e.g. "ONIX", "CHEVROLET ONIX", "COROLLA", "TOYOTA COROLLA")
+    if (normQuery === cleanFam || normQuery === fullFamilyName) {
+      return { score: 100 + baseScore, matchLevel: 'exact_family' };
+    }
+
+    // 3. Exact match on raw model string (e.g. "ONIX 1.0", "HILUX CABINE")
+    if (normQuery === normModel || normQuery === fullModelName) {
+      return { score: 95 + baseScore, matchLevel: 'exact_model' };
+    }
+
+    // 4. Token match (all query tokens match full words in model or brand)
+    const modelWords = normModel.split(/[^a-z0-9]+/i).filter(Boolean);
+    const brandWords = cleanBrand.split(/[^a-z0-9]+/i).filter(Boolean);
+    const allWords = [...brandWords, ...modelWords];
+    const isTokenMatch = terms.length > 0 && terms.every((t) => allWords.includes(t));
+    if (isTokenMatch) {
+      return { score: 70 + baseScore, matchLevel: 'token_match' };
+    }
+
+    // 5. Prefix match
+    const isPrefixMatch = terms.length > 0 && terms.every((t) => allWords.some((w) => w.startsWith(t)));
+    if (isPrefixMatch) {
+      return { score: 50 + baseScore, matchLevel: 'prefix_match' };
+    }
+
+    // 6. Fuzzy match
+    return { score: 30 + baseScore, matchLevel: 'fuzzy_match' };
+  }
+
+  private productMatchesQuery(p: BrandProduct, terms: string[], rawQuery: string): boolean {
+    const cRaw = compactCode(rawQuery);
+    const cCode = compactCode(p.code);
+    if (cCode === cRaw || (cRaw.length >= 3 && cCode.includes(cRaw))) return true;
+    for (const term of terms) {
+      if (/^\d{4}$/.test(term)) continue; // Ano de 4 dígitos não é código de palheta
+      const cTerm = compactCode(term);
+      if (cTerm.length >= 3 && (cCode === cTerm || cCode.includes(cTerm))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private vehicleMatchesQuery(v: Vehicle, terms: string[]): boolean {
     const brandNorm = normalizeText(canonicalizeManufacturer(v.brand) || v.brand);
     const modelNorm = normalizeText(v.model);
     const modelWords = modelNorm.split(/[^a-z0-9]+/i).filter(Boolean);
     const brandWords = brandNorm.split(/[^a-z0-9]+/i).filter(Boolean);
+    const cleanFam = cleanVehicleModelFamily(v.model);
 
+    // 1. Proteção de Submodelos e Famílias Derivadas (Onix Plus, Corolla Cross/Fielder, Hilux SW4)
+    const submodelTokens = ['plus', 'cross', 'fielder', 'sw4', 'sw'];
+    for (const sub of submodelTokens) {
+      const isSwGroup = sub === 'sw4' || sub === 'sw';
+      const modelHasSub = isSwGroup
+        ? (modelWords.includes('sw4') || modelWords.includes('sw') || cleanFam.includes('sw4'))
+        : (modelWords.includes(sub) || cleanFam.includes(sub));
+      const queryHasSub = isSwGroup
+        ? terms.some((t) => t === 'sw4' || t === 'sw')
+        : terms.includes(sub);
+
+      if (modelHasSub && !queryHasSub) return false;
+      if (!modelHasSub && queryHasSub && terms.length > 1) return false;
+    }
+
+    // 2. Proteção HB20 vs HB20S vs HB20X
+    const isHb20s = cleanFam === 'hb20s' || modelWords.includes('hb20s');
+    const queryHasHb20s = terms.includes('hb20s') || (terms.includes('hb20') && terms.includes('s'));
+    if (isHb20s && !queryHasHb20s) return false;
+    if (!isHb20s && queryHasHb20s) return false;
+
+    const isHb20x = cleanFam === 'hb20x' || modelWords.includes('hb20x');
+    const queryHasHb20x = terms.includes('hb20x') || (terms.includes('hb20') && terms.includes('x'));
+    if (isHb20x && !queryHasHb20x) return false;
+    if (!isHb20x && queryHasHb20x) return false;
+
+    // 3. Verificação de correspondência de termos
     for (const term of terms) {
       if (/^\d{4}$/.test(term)) {
         const y = Number(term);
@@ -264,11 +392,11 @@ export class CatalogSearchEngine {
 
       const matchesBrand = brandWords.some((bw) => bw === term || (bw.startsWith(term) && term.length >= 3));
       const matchesModel = modelWords.some((mw) => {
-        if (term.length <= 3) {
-          // Termos curtos como "gol", "uno", "ka", "c3" exigem palavra idêntica
+        if (term.length <= 4) {
+          // Termos curtos como "gol", "uno", "ka", "hb20", "c3" exigem palavra idêntica
           return mw === term;
         }
-        return mw === term || mw.startsWith(term);
+        return mw === term || (mw.startsWith(term) && !modelWords.includes('hb20s'));
       });
 
       if (!matchesBrand && !matchesModel) {
@@ -279,7 +407,7 @@ export class CatalogSearchEngine {
     return true;
   }
 
-  private buildVehicleResult(v: Vehicle, score = 1): SearchResultItem {
+  private buildVehicleResult(v: Vehicle, score = 1, matchLevel?: SearchMatchLevel): SearchResultItem {
     const apps = this.applicationsByVehicleId.get(v.id) ?? [];
     const matchedApps = apps.map((a) => {
       const conn = a.connectorId ? this.connectorsById.get(a.connectorId) : undefined;
@@ -312,6 +440,7 @@ export class CatalogSearchEngine {
       id: v.id,
       type: 'vehicle',
       score,
+      matchLevel,
       vehicle: v,
       matchedApplications: matchedApps,
     };
@@ -368,12 +497,41 @@ export class CatalogSearchEngine {
         const normModel = normalizeText(v.model);
         const filterWords = normFilter.split(/[^a-z0-9]+/i).filter(Boolean);
         const modelWords = normModel.split(/[^a-z0-9]+/i).filter(Boolean);
+        const cleanFam = cleanVehicleModelFamily(v.model);
+
+        // Submodel boundaries in filters (Onix Plus, Corolla Cross/Fielder, Hilux SW4)
+        for (const sub of ['plus', 'cross', 'fielder', 'sw4', 'sw']) {
+          const isSwGroup = sub === 'sw4' || sub === 'sw';
+          const modelHasSub = isSwGroup
+            ? (modelWords.includes('sw4') || modelWords.includes('sw') || cleanFam.includes('sw4'))
+            : (modelWords.includes(sub) || cleanFam.includes(sub));
+          const filterHasSub = isSwGroup
+            ? (filterWords.includes('sw4') || filterWords.includes('sw'))
+            : filterWords.includes(sub);
+
+          if (modelHasSub && !filterHasSub) return false;
+          if (!modelHasSub && filterHasSub && filterWords.length > 1) return false;
+        }
+
+        // HB20 / HB20S / HB20X in filters
+        const isHb20s = cleanFam === 'hb20s' || modelWords.includes('hb20s');
+        const filterHasHb20s =
+          filterWords.includes('hb20s') || (filterWords.includes('hb20') && filterWords.includes('s'));
+        if (isHb20s && !filterHasHb20s) return false;
+        if (!isHb20s && filterHasHb20s) return false;
+
+        const isHb20x = cleanFam === 'hb20x' || modelWords.includes('hb20x');
+        const filterHasHb20x =
+          filterWords.includes('hb20x') || (filterWords.includes('hb20') && filterWords.includes('x'));
+        if (isHb20x && !filterHasHb20x) return false;
+        if (!isHb20x && filterHasHb20x) return false;
+
         const matches =
           filterWords.length > 0 &&
           filterWords.every((fw) =>
             modelWords.some((mw) => {
-              if (fw.length <= 3) return mw === fw;
-              return mw === fw || mw.startsWith(fw);
+              if (fw.length <= 4) return mw === fw;
+              return mw === fw || (mw.startsWith(fw) && !modelWords.includes('hb20s'));
             }),
           );
         if (!matches) return false;

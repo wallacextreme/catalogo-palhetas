@@ -19,7 +19,13 @@
     "data:validate": "bun scripts/pipeline/validate-only.ts",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "build:pwa": "vite build",
+    "build:desktop": "bun scripts/build-release.ts --desktop",
+    "build:desktop:exe": "bun scripts/build-release.ts --exe",
+    "build:desktop:msi": "bun scripts/build-release.ts --msi",
+    "build:all": "bun scripts/build-release.ts --all",
+    "release": "bun scripts/build-release.ts --all"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

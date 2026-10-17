@@ -1,0 +1,106 @@
+[
+  {
+    "issueId": "REV-001",
+    "decision": "KEEP_VERBATIM_CONFIRM_FITS",
+    "reason": "Catálogo Cinoy p. 221 documenta ambas as linhas (Slim Blade e Convencional) com 10 polegadas. Nenhuma alteração cadastral necessária no dataset.",
+    "source": "Cinoy 2024",
+    "page": 221,
+    "timestamp": "2026-10-07T09:00:00Z"
+  },
+  {
+    "issueId": "REV-002",
+    "decision": "FLAG_BALCAO_WARNING",
+    "reason": "BMW M6 Coupé possui variação severa entre gerações E63 (18/19 polegadas) e F12 (26 polegadas). Mantida divergência sinalizada na UI para conferência no balcão.",
+    "source": "Cinoy 2024",
+    "page": 216,
+    "timestamp": "2026-10-07T09:00:00Z"
+  },
+  {
+    "issueId": "REV-003",
+    "decision": "FLAG_BALCAO_WARNING",
+    "reason": "Variação de polegadas e encaixes da M6 Coupé no mesmo período preservada integralmente conforme catalogado.",
+    "source": "Cinoy 2024",
+    "page": 217,
+    "timestamp": "2026-10-07T09:00:00Z"
+  },
+  {
+    "issueId": "REV-004",
+    "decision": "SCHEDULE_EXTRACTION_FIX",
+    "reason": "Omissão de marca no catálogo Cinoy p. 218 gerou cluster artificial 'classe'. Preservado no dataset; a busca por modelo isola Classe B de Classe M.",
+    "source": "Cinoy 2024",
+    "page": 218,
+    "timestamp": "2026-10-07T09:00:00Z"
+  },
+  {
+    "issueId": "REV-005",
+    "decision": "SCHEDULE_EXTRACTION_FIX",
+    "reason": "Classe M vs Classe S agrupados sob 'classe' devido à omissão da marca Mercedes-Benz no cabeçalho do PDF.",
+    "source": "Cinoy 2024",
+    "page": 218,
+    "timestamp": "2026-10-07T09:00:00Z"
+  },
+  {
+    "issueId": "REV-006",
+    "decision": "SCHEDULE_EXTRACTION_FIX",
+    "reason": "Cruzamento artificial entre Classe M e Classe B decorrente de omissão de marca no PDF.",
+    "source": "Cinoy 2024",
+    "page": 218,
+    "timestamp": "2026-10-07T09:00:00Z"
+  },
+  {
+    "issueId": "REV-007",
+    "decision": "SCHEDULE_EXTRACTION_FIX",
+    "reason": "Transição de geração da Classe M mantida como variante documentada.",
+    "source": "Cinoy 2024",
+    "page": 218,
+    "timestamp": "2026-10-07T09:00:00Z"
+  },
+  {
+    "issueId": "REV-008",
+    "decision": "SCHEDULE_EXTRACTION_FIX",
+    "reason": "Cruzamento indevido entre Classe B e Classe S decorrente de omissão de marca no PDF.",
+    "source": "Cinoy 2024",
+    "page": 218,
+    "timestamp": "2026-10-07T09:00:00Z"
+  },
+  {
+    "issueId": "REV-009",
+    "decision": "SCHEDULE_EXTRACTION_FIX",
+    "reason": "Transição geracional legítima da Classe B documentada no catálogo Cinoy.",
+    "source": "Cinoy 2024",
+    "page": 218,
+    "timestamp": "2026-10-07T09:00:00Z"
+  },
+  {
+    "issueId": "REV-010",
+    "decision": "SCHEDULE_EXTRACTION_FIX",
+    "reason": "Cruzamento indevido entre Classe B e Classe M.",
+    "source": "Cinoy 2024",
+    "page": 218,
+    "timestamp": "2026-10-07T09:00:00Z"
+  },
+  {
+    "issueId": "REV-011",
+    "decision": "SCHEDULE_EXTRACTION_FIX",
+    "reason": "Cruzamento indevido entre Classe S e Classe B.",
+    "source": "Cinoy 2024",
+    "page": 218,
+    "timestamp": "2026-10-07T09:00:00Z"
+  },
+  {
+    "issueId": "REV-012",
+    "decision": "SCHEDULE_EXTRACTION_FIX",
+    "reason": "Cruzamento indevido entre Classe S e Classe M.",
+    "source": "Cinoy 2024",
+    "page": 218,
+    "timestamp": "2026-10-07T09:00:00Z"
+  },
+  {
+    "issueId": "REV-013",
+    "decision": "SCHEDULE_EXTRACTION_FIX",
+    "reason": "Cruzamento indevido entre Classe B e Classe M decorrente de omissão de marca no PDF.",
+    "source": "Cinoy 2024",
+    "page": 218,
+    "timestamp": "2026-10-07T09:00:00Z"
+  }
+]

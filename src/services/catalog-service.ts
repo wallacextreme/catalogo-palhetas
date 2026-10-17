@@ -6,10 +6,10 @@ import type {
   Vehicle,
   VehicleApplication,
 } from '@/domain/types';
-import { CatalogSearchEngine, type SearchFilters, type SearchResultItem } from '@/search/search-engine';
+import { CatalogSearchEngine, extractYearFromQuery, type SearchFilters, type SearchResultItem } from '@/search/search-engine';
 import { InMemoryCatalogDatabase } from '@/repositories/memory/memory-repository';
 import { DexieCatalogRepository } from '@/repositories/dexie/dexie-database';
-import { consolidateVehicleResults } from '@/domain/consolidation';
+import { consolidateVehicleFamilies } from '@/domain/consolidation';
 
 export class CatalogService {
   private static instance: CatalogService | null = null;
@@ -74,7 +74,8 @@ export class CatalogService {
   public search(query: string, filters?: SearchFilters): SearchResultItem[] {
     if (!this.searchEngine) throw new Error('Engine de busca não inicializada.');
     const raw = this.searchEngine.search(query, filters);
-    return consolidateVehicleResults(raw);
+    const filterYear = filters?.year ?? extractYearFromQuery(query);
+    return consolidateVehicleFamilies(raw, filterYear);
   }
 
   public async getBrands(): Promise<string[]> {
