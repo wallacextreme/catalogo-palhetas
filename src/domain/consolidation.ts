@@ -11,6 +11,7 @@ import type {
   VehicleFamilyResult,
 } from './types';
 import { normalizeText, titleCase } from './normalize';
+import { resolveMillimeters } from './measures';
 import { yearRangesOverlap } from './years';
 import { canonicalizeManufacturer } from './manufacturers';
 import {
@@ -416,7 +417,7 @@ export function consolidateVehicleFamilies(
           position: pos,
           positionLabel: POSITION_LABELS[pos] || pos,
           inches: d.application.inches,
-          millimeters: d.application.millimeters,
+          millimeters: resolveMillimeters(d.application.inches, d.application.millimeters),
           sizeLabel: d.application.sizeLabel,
           connectorRaw: d.application.connectorRaw,
           connector: d.connector,
@@ -541,7 +542,7 @@ export function consolidateVehicleFamilies(
         sourceMillimeters: app.millimeters,
         calculatedMillimeters: app.millimeters,
         sizeLabel: app.sizeLabel || null,
-        measureOrigin: (app.measureOrigin as any) || 'application_table',
+        measureOrigin: app.measureOrigin ?? 'application_table',
         connectorRaw: app.connectorRaw,
         sourceIds: app.fits.flatMap((f) => f.sources.map((s) => s.id)),
       },

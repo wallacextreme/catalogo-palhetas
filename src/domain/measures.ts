@@ -9,6 +9,16 @@ export function inchesToMillimeters(inches: number): number {
   return Math.round(inches * MM_PER_INCH * 10) / 10;
 }
 
+export function millimetersToInches(mm: number): number {
+  return Math.round(mm / MM_PER_INCH);
+}
+
+export function resolveMillimeters(inches: number | null, millimeters: number | null): number | null {
+  if (millimeters !== null && Number.isFinite(millimeters)) return millimeters;
+  if (inches !== null && Number.isFinite(inches)) return Math.round(inches * MM_PER_INCH);
+  return null;
+}
+
 /** Faixa plausível de palheta automotiva leve (polegadas). Fora disso = medida inválida. */
 export const MIN_BLADE_INCHES = 8;
 export const MAX_BLADE_INCHES = 34;

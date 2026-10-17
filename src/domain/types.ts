@@ -328,7 +328,7 @@ export interface TechnicalVariantApplication {
   sizeLabel?: string | null;
   connectorRaw?: string;
   connector?: Connector;
-  measureOrigin?: MeasureOrigin | string;
+  measureOrigin?: MeasureOrigin;
   fits: MatchedApplicationFit[];
   technicalStatus?: import('./governance').TechnicalStatus;
   confidenceMatrix?: import('./governance').TechnicalConfidenceMatrix;
@@ -350,6 +350,8 @@ export interface TechnicalVariant {
   applications: TechnicalVariantApplication[];
   documentedBrands: string[];
   technicalStatus?: import('./governance').TechnicalStatus;
+  hasTransitionWarning?: boolean;
+  transitionWarningText?: string;
 }
 
 export interface VehicleFamilyResult {
@@ -365,6 +367,8 @@ export interface VehicleFamilyResult {
   sourceIds: string[];
   selectedYear?: number;
   relatedFamilies?: string[];
+  hasTransitionWarning?: boolean;
+  transitionYears?: string[];
   governance?: import('./governance').FamilyTechnicalGovernanceSummary;
 }
 
