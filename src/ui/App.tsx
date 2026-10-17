@@ -1,6 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks';
 import type { BrandProduct, CatalogSource, Vehicle } from '@/domain/types';
 import { CatalogService } from '@/services/catalog-service';
+import {
+  counterStorage,
+  type CounterVehicleNote,
+  type FavoriteVehicleItem,
+} from '@/services/counter-storage';
 import { extractYearFromQuery, type SearchFilters, type SearchResultItem } from '@/search/search-engine';
 import { Header } from './components/Header';
 import { SearchBar } from './components/SearchBar';
@@ -16,6 +21,19 @@ export function App() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [initError, setInitError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const importFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Persistência Local de Balcão (Favoritos, Recentes, Notas)
+  const [favorites, setFavorites] = useState<FavoriteVehicleItem[]>(() =>
+    counterStorage.getFavorites(),
+  );
+  const [recentSearches, setRecentSearches] = useState<string[]>(() =>
+    counterStorage.getRecentSearches(),
+  );
+  const [counterNotes, setCounterNotes] = useState<Record<string, CounterVehicleNote>>(() =>
+    counterStorage.getNotes(),
+  );
+  const [backupStatusMessage, setBackupStatusMessage] = useState<string | null>(null);
 
   // Tema Dark / Light
   const [isDark, setIsDark] = useState(() => {
@@ -190,6 +208,79 @@ export function App() {
 
     return () => clearTimeout(timer);
   }, [searchQuery, filters, isInitializing, initError, handleApplyFilters]);
+
+  // Registra buscas relevantes no histórico local após estabilização da digitação
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < 2) return;
+    const timer = setTimeout(() => {
+      const updated = counterStorage.addRecentSearch(trimmed);
+      setRecentSearches(updated);
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Handlers de Persistência Local de Balcão
+  const handleToggleFavorite = useCallback((familyId: string, fullName: string) => {
+    const updated = counterStorage.toggleFavorite(familyId, fullName);
+    setFavorites(updated);
+  }, []);
+
+  const handleSaveCounterNote = useCallback(
+    (familyId: string, fullName: string, noteText: string) => {
+      const updated = counterStorage.setVehicleNote(familyId, fullName, noteText);
+      setCounterNotes(updated);
+    },
+    [],
+  );
+
+  const handleClearRecentSearches = useCallback(() => {
+    const updated = counterStorage.clearRecentSearches();
+    setRecentSearches(updated);
+  }, []);
+
+  const handleExportCounterBackup = useCallback(() => {
+    const json = counterStorage.exportBackupJson();
+    const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const datePart = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `catalogo-palhetas-balcao-backup-${datePart}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setBackupStatusMessage('Backup local exportado!');
+    setTimeout(() => setBackupStatusMessage(null), 3000);
+  }, []);
+
+  const handleImportCounterBackup = useCallback((e: Event) => {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const text = typeof reader.result === 'string' ? reader.result : '';
+        const summary = counterStorage.importBackupJson(text);
+        setFavorites(counterStorage.getFavorites());
+        setRecentSearches(counterStorage.getRecentSearches());
+        setCounterNotes(counterStorage.getNotes());
+        setBackupStatusMessage(
+          `Restaurado (${summary.favoritesCount} favs / ${summary.notesCount} notas)`,
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Erro ao importar JSON';
+        setBackupStatusMessage(`Erro: ${msg}`);
+      } finally {
+        setTimeout(() => setBackupStatusMessage(null), 4000);
+        input.value = '';
+      }
+    };
+    reader.readAsText(file);
+  }, []);
 
   // Abertura do Modal de Rastreabilidade
   const handleShowSources = useCallback((sources: CatalogSource[], title: string) => {
@@ -369,6 +460,94 @@ export function App() {
             onReset={() => setFilters({})}
             onApply={handleApplyFilters}
           />
+
+          {/* Barra Rápida de Balcão: Favoritos Fixados, Buscas Recentes e Backup Local */}
+          <div className="p-3 rounded-xl bg-white/80 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Favoritos */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1 text-[11px] uppercase tracking-wider">
+                  <span aria-hidden="true">⭐</span> Favoritos:
+                </span>
+                {favorites.length > 0 ? (
+                  favorites.slice(0, 8).map((fav) => (
+                    <button
+                      key={fav.familyId}
+                      type="button"
+                      onClick={() => setSearchQuery(fav.fullName)}
+                      className="px-2 py-0.5 rounded-md bg-amber-500/10 hover:bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-500/30 font-semibold text-[11px] transition-colors cursor-pointer"
+                      title={`Consultar ${fav.fullName}`}
+                    >
+                      {fav.fullName}
+                    </button>
+                  ))
+                ) : (
+                  <span className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+                    Nenhum fixado (clique em ☆ Favoritar nos veículos mais atendidos)
+                  </span>
+                )}
+              </div>
+
+              {/* Buscas Recentes */}
+              {recentSearches.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pl-2 border-l border-slate-200 dark:border-slate-800">
+                  <span className="font-semibold text-slate-500 dark:text-slate-400 text-[11px]">
+                    🕒 Recentes:
+                  </span>
+                  {recentSearches.slice(0, 5).map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      onClick={() => setSearchQuery(q)}
+                      className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 text-[11px] transition-colors cursor-pointer"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={handleClearRecentSearches}
+                    className="text-[10px] text-slate-400 hover:text-red-500 underline ml-1 cursor-pointer"
+                    title="Limpar histórico recente"
+                  >
+                    limpar
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Backup Local Privado (JSON) */}
+            <div className="flex items-center gap-2 ml-auto">
+              {backupStatusMessage && (
+                <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                  {backupStatusMessage}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={handleExportCounterBackup}
+                className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 text-[11px] font-medium transition-colors cursor-pointer"
+                title="Exportar favoritos e notas locais do balcão em arquivo JSON"
+              >
+                💾 Exportar Notas
+              </button>
+              <button
+                type="button"
+                onClick={() => importFileInputRef.current?.click()}
+                className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 text-[11px] font-medium transition-colors cursor-pointer"
+                title="Importar backup JSON de favoritos e notas locais"
+              >
+                📂 Importar Notas
+              </button>
+              <input
+                ref={importFileInputRef}
+                type="file"
+                accept=".json,application/json"
+                onChange={handleImportCounterBackup}
+                className="hidden"
+              />
+            </div>
+          </div>
         </section>
 
         {/* Resumo da Pesquisa */}
@@ -430,14 +609,21 @@ export function App() {
         <section className="space-y-6">
           {displayedResults.map((item) => {
             if (item.type === 'vehicle_family' && item.family) {
+              const fam = item.family;
+              const isFav = favorites.some((f) => f.familyId === fam.id);
+              const savedNote = counterNotes[fam.id]?.text || '';
               return (
                 <VehicleFamilyCard
                   key={item.id}
-                  family={item.family}
+                  family={fam}
                   onShowSources={handleShowSources}
                   onShowSourcesByIds={handleShowSourcesByIds}
                   onSelectProduct={handleSelectProduct}
                   onSelectRelatedFamily={handleSelectRelatedFamily}
+                  isFavorite={isFav}
+                  onToggleFavorite={handleToggleFavorite}
+                  counterNote={savedNote}
+                  onSaveCounterNote={handleSaveCounterNote}
                 />
               );
             }

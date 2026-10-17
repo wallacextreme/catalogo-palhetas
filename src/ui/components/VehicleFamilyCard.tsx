@@ -15,6 +15,10 @@ interface VehicleFamilyCardProps {
   onShowSourcesByIds?: (sourceIds: string[], title: string) => void;
   onSelectProduct?: (product: BrandProduct) => void;
   onSelectRelatedFamily?: (query: string) => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: (familyId: string, fullName: string) => void;
+  counterNote?: string;
+  onSaveCounterNote?: (familyId: string, fullName: string, noteText: string) => void;
 }
 
 /** Formata a ficha técnica de uma variante individual para cópia/WhatsApp no balcão */
@@ -144,6 +148,10 @@ export function VehicleFamilyCard({
   onShowSourcesByIds,
   onSelectProduct,
   onSelectRelatedFamily,
+  isFavorite = false,
+  onToggleFavorite,
+  counterNote = '',
+  onSaveCounterNote,
 }: VehicleFamilyCardProps) {
   // Apenas a primeira variante vem expandida por padrão em busca ampla,
   // ou a variante única filtrada pelo ano.
@@ -156,6 +164,9 @@ export function VehicleFamilyCard({
   });
 
   const [showDivergenceDetails, setShowDivergenceDetails] = useState(false);
+  const [showNoteEditor, setShowNoteEditor] = useState(Boolean(counterNote));
+  const [draftNote, setDraftNote] = useState(counterNote);
+  const [noteSavedFeedback, setNoteSavedFeedback] = useState(false);
 
   const toggleVariant = (id: string) => {
     setExpandedVariants((prev) => ({
@@ -403,7 +414,39 @@ export function VehicleFamilyCard({
         </div>
 
         {/* Ações Rápidas de Balcão */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {onToggleFavorite && (
+            <button
+              type="button"
+              onClick={() => onToggleFavorite(family.id, family.fullName)}
+              className={`text-xs px-2.5 py-1.5 rounded-lg border shadow-2xs flex items-center gap-1 transition-colors font-semibold cursor-pointer ${
+                isFavorite
+                  ? 'bg-amber-100 text-amber-800 border-amber-400 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/40'
+                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-700'
+              }`}
+              title={isFavorite ? 'Remover dos veículos favoritos do balcão' : 'Fixar veículo nos favoritos do balcão'}
+            >
+              <span aria-hidden="true">{isFavorite ? '⭐' : '☆'}</span>
+              <span>{isFavorite ? 'Favorito' : 'Favoritar'}</span>
+            </button>
+          )}
+
+          {onSaveCounterNote && (
+            <button
+              type="button"
+              onClick={() => setShowNoteEditor((prev) => !prev)}
+              className={`text-xs px-2.5 py-1.5 rounded-lg border shadow-2xs flex items-center gap-1 transition-colors font-semibold cursor-pointer ${
+                counterNote
+                  ? 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/40'
+                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-700'
+              }`}
+              title="Adicionar ou ver observação interna de balcão (salva apenas neste computador)"
+            >
+              <span aria-hidden="true">📝</span>
+              <span>{counterNote ? 'Nota Local' : 'Nota'}</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleCopyFullSheet}
@@ -444,6 +487,56 @@ export function VehicleFamilyCard({
           </button>
         </div>
       </div>
+
+      {/* 1.05 PAINEL DE NOTA LOCAL DE BALCÃO (Fase 4 - Persistência Local Privada) */}
+      {showNoteEditor && onSaveCounterNote && (
+        <div className="bg-blue-500/5 dark:bg-blue-950/30 border-b border-blue-500/20 px-5 py-3 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+            <span className="font-bold text-blue-800 dark:text-blue-300 flex items-center gap-1.5">
+              <span aria-hidden="true">📝</span> Observação Interna do Balcão ({family.fullName})
+            </span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400">
+              🔒 Salvo apenas neste computador (Offline / Privado)
+            </span>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={draftNote}
+              onInput={(e) => setDraftNote((e.target as HTMLInputElement).value)}
+              placeholder="Ex.: Prateleira B2 • Cliente prefere silicone • Confirmar braço baioneta no ano 2012..."
+              className="flex-1 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs focus:outline-none focus:border-amber-500"
+            />
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  onSaveCounterNote(family.id, family.fullName, draftNote);
+                  setNoteSavedFeedback(true);
+                  setTimeout(() => setNoteSavedFeedback(false), 1800);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition-colors cursor-pointer"
+              >
+                {noteSavedFeedback ? '✓ Salvo!' : 'Salvar Nota'}
+              </button>
+              {counterNote && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraftNote('');
+                    onSaveCounterNote(family.id, family.fullName, '');
+                    setShowNoteEditor(false);
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-200 hover:bg-red-100 text-slate-700 hover:text-red-700 dark:bg-slate-800 dark:hover:bg-red-500/20 dark:text-slate-300 dark:hover:text-red-300 font-semibold text-xs transition-colors cursor-pointer"
+                  title="Apagar nota local deste veículo"
+                >
+                  Apagar
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 1.1 PAINEL EXPANSÍVEL DE DIVERGÊNCIA DOCUMENTAL (Fase 5 - Balcão) */}
       {showDivergenceDetails && family.governance?.divergenceDetails && family.governance.divergenceDetails.length > 0 && (
