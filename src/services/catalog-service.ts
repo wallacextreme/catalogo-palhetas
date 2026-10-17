@@ -141,4 +141,9 @@ export class CatalogService {
     const m = this.memoryDb.getManufacturerById(manufacturerId);
     return m?.code || m?.name || manufacturerId;
   }
+
+  public getEquivalentProductsForProduct(productId: string): Record<string, BrandProduct[]> {
+    if (!this.searchEngine) return {};
+    return this.searchEngine.getEquivalentProductsForProduct(productId);
+  }
 }

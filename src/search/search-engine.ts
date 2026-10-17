@@ -11,6 +11,7 @@ import type {
   VehicleFamilyResult,
 } from '@/domain/types';
 import { compactCode, normalizeText } from '@/domain/normalize';
+import { isPlausibleBladeInches, millimetersToInches, parseInchesList } from '@/domain/measures';
 import { yearInRange } from '@/domain/years';
 import { canonicalizeManufacturer } from '@/domain/manufacturers';
 import { cleanVehicleModelFamily } from '@/domain/consolidation';
@@ -18,6 +19,81 @@ import { cleanVehicleModelFamily } from '@/domain/consolidation';
 export function extractYearFromQuery(query: string): number | undefined {
   const match = query.match(/\b(19\d{2}|20\d{2})\b/);
   return match ? Number(match[1]) : undefined;
+}
+
+export interface ExtractedMeasures {
+  inchesList: number[];
+  cleanedQuery: string;
+}
+
+/**
+ * Detecta medidas na barra de pesquisa:
+ * - Pares em polegadas: "22/16", "24/14", "22 / 16", '24"/14"'
+ * - Medidas em milímetros: "600mm", "600 mm", "600/400mm"
+ * - Polegadas explícitas: '24"', "22 pol", "22pol"
+ * - Medida isolada de 2 dígitos: "22", "24"
+ */
+export function extractMeasuresFromQuery(query: string): ExtractedMeasures | undefined {
+  let working = query.trim();
+  if (!working) return undefined;
+
+  const inchesList: number[] = [];
+
+  // 1. Milímetros explícitos: "600mm", "600/400mm", "600/350 mm"
+  const mmRegex = /\b(\d{3})(?:\s*[/x]\s*(\d{3}))?\s*mm\b/gi;
+  working = working.replace(mmRegex, (_full, m1: string, m2?: string) => {
+    const v1 = Number(m1);
+    if (v1 >= 200 && v1 <= 850) {
+      const inc1 = millimetersToInches(v1);
+      if (isPlausibleBladeInches(inc1)) inchesList.push(inc1);
+    }
+    if (m2) {
+      const v2 = Number(m2);
+      if (v2 >= 200 && v2 <= 850) {
+        const inc2 = millimetersToInches(v2);
+        if (isPlausibleBladeInches(inc2)) inchesList.push(inc2);
+      }
+    }
+    return ' ';
+  });
+
+  // 2. Par de polegadas separado por barra ou 'x': "22/16", "24/14", '24"/14"'
+  const pairRegex = /(?:^|\s)(\d{2})\s*["”″']?\s*[/x]\s*(\d{2})\s*["”″']?(?:\s*pol)?(?=\s|$)/gi;
+  working = working.replace(pairRegex, (full, p1: string, p2: string) => {
+    const i1 = Number(p1);
+    const i2 = Number(p2);
+    if (isPlausibleBladeInches(i1) && isPlausibleBladeInches(i2)) {
+      inchesList.push(i1, i2);
+      return ' ';
+    }
+    return full;
+  });
+
+  // 3. Polegada individual explícita com aspas ou "pol": '24"', '22 pol', '18pol'
+  const singleExplicitRegex = /(?:^|\s)(\d{1,2})\s*(?:["”″]|pol\b)/gi;
+  working = working.replace(singleExplicitRegex, (full, p1: string) => {
+    const i1 = Number(p1);
+    if (isPlausibleBladeInches(i1)) {
+      inchesList.push(i1);
+      return ' ';
+    }
+    return full;
+  });
+
+  // 4. Query composta exclusivamente por um número de 2 dígitos de polegada plausível (ex: "22", "24")
+  if (inchesList.length === 0 && /^\d{2}$/.test(working)) {
+    const val = Number(working);
+    if (val >= 10 && val <= 32) {
+      return { inchesList: [val], cleanedQuery: '' };
+    }
+  }
+
+  if (inchesList.length === 0) return undefined;
+
+  return {
+    inchesList,
+    cleanedQuery: working.replace(/\s+/g, ' ').trim(),
+  };
 }
 
 export type SearchMatchLevel =
@@ -48,6 +124,9 @@ export interface SearchResultItem {
   family?: VehicleFamilyResult;
   vehicle?: Vehicle;
   product?: BrandProduct;
+  manufacturerCode?: string;
+  equivalentProductsByBrand?: Record<string, BrandProduct[]>;
+  compatibleVehiclesCount?: number;
   matchedApplications?: Array<{
     application: VehicleApplication;
     connector?: Connector;
@@ -86,6 +165,9 @@ export class CatalogSearchEngine {
   private applicationsById = new Map<string, VehicleApplication>();
   private applicationsByVehicleId = new Map<string, VehicleApplication[]>();
   private fitsByApplicationId = new Map<string, ProductFit[]>();
+  private fitsByProductId = new Map<string, ProductFit[]>();
+  private applicationsByFamilyPosKey = new Map<string, string[]>(); // "brand|family|pos|inch" -> appIds
+  private vehicleFamilyPosKeyByAppId = new Map<string, string>(); // appId -> "brand|family|pos|inch"
   private connectorsById = new Map<string, Connector>();
   private sourcesById = new Map<string, CatalogSource>();
   private manufacturersById = new Map<string, string>(); // id -> code
@@ -121,6 +203,11 @@ export class CatalogSearchEngine {
         this.fitsByApplicationId.set(f.vehicleApplicationId, []);
       }
       this.fitsByApplicationId.get(f.vehicleApplicationId)!.push(f);
+
+      if (!this.fitsByProductId.has(f.brandProductId)) {
+        this.fitsByProductId.set(f.brandProductId, []);
+      }
+      this.fitsByProductId.get(f.brandProductId)!.push(f);
     }
 
     this.miniSearch = new MiniSearch<IndexedDoc>({
@@ -139,9 +226,21 @@ export class CatalogSearchEngine {
   private buildIndex(): void {
     const docs: IndexedDoc[] = [];
 
-    // Indexa Veículos
+    // Indexa Veículos e mapa O(1) de equivalência por família/posição/medida
     for (const v of this.dataset.vehicles) {
       const apps = this.applicationsByVehicleId.get(v.id) ?? [];
+      const brandCanon = normalizeText(canonicalizeManufacturer(v.brand) || v.brand);
+      const fam = cleanVehicleModelFamily(v.model);
+
+      for (const a of apps) {
+        const key = `${brandCanon}|${fam}|${a.position}|${a.inches ?? ''}`;
+        this.vehicleFamilyPosKeyByAppId.set(a.id, key);
+        if (!this.applicationsByFamilyPosKey.has(key)) {
+          this.applicationsByFamilyPosKey.set(key, []);
+        }
+        this.applicationsByFamilyPosKey.get(key)!.push(a.id);
+      }
+
       const appProductCodes = apps
         .flatMap((a) => this.fitsByApplicationId.get(a.id) ?? [])
         .map((f) => {
@@ -192,15 +291,107 @@ export class CatalogSearchEngine {
     this.miniSearch.addAll(docs);
   }
 
+  private vehicleMatchesMeasures(v: Vehicle, requiredInches: number[]): boolean {
+    if (requiredInches.length === 0) return true;
+    const apps = this.applicationsByVehicleId.get(v.id) ?? [];
+    if (apps.length === 0) return false;
+
+    const availableInches: number[] = [];
+    for (const a of apps) {
+      if (a.inches !== null) availableInches.push(a.inches);
+      if (a.sizeLabel) {
+        const parsed = parseInchesList(a.sizeLabel);
+        if (parsed) availableInches.push(...parsed);
+      }
+      const fits = this.fitsByApplicationId.get(a.id) ?? [];
+      for (const f of fits) {
+        const prod = this.productsById.get(f.brandProductId);
+        if (prod && prod.inches.length > 0) {
+          availableInches.push(...prod.inches);
+        }
+      }
+    }
+
+    // Se pediu duas medidas iguais (ex: 20/20), checa contagem; caso contrário checa presença de todas
+    if (requiredInches.length === 2 && requiredInches[0] === requiredInches[1]) {
+      return availableInches.filter((x) => x === requiredInches[0]).length >= 2;
+    }
+    return requiredInches.every((req) => availableInches.includes(req));
+  }
+
+  private productMatchesMeasures(p: BrandProduct, requiredInches: number[]): boolean {
+    if (requiredInches.length === 0) return true;
+    if (!p.inches || p.inches.length === 0) return false;
+    return requiredInches.every((req) => p.inches.includes(req));
+  }
+
   /**
-   * Executa busca inteligente multi-critério (por veículo ou código de produto) com filtros combináveis.
+   * Retorna instantaneamente em O(1) os produtos equivalentes de outras marcas (DYNA, CINOY, VETOR)
+   * que compartilham aplicações com o produto informado.
+   */
+  public getEquivalentProductsForProduct(productId: string): Record<string, BrandProduct[]> {
+    const productFits = this.fitsByProductId.get(productId) ?? [];
+    const byBrand: Record<string, Map<string, BrandProduct>> = {
+      DYNA: new Map(),
+      CINOY: new Map(),
+      VETOR: new Map(),
+    };
+
+    const targetProduct = this.productsById.get(productId);
+    const targetMfr = targetProduct
+      ? (this.manufacturersById.get(targetProduct.manufacturerId) ?? '').toUpperCase()
+      : '';
+
+    const relatedFamiliesKeys = new Set<string>();
+    for (const pf of productFits) {
+      const key = this.vehicleFamilyPosKeyByAppId.get(pf.vehicleApplicationId);
+      if (key) relatedFamiliesKeys.add(key);
+
+      const coFits = this.fitsByApplicationId.get(pf.vehicleApplicationId) ?? [];
+      for (const cf of coFits) {
+        if (cf.brandProductId === productId) continue;
+        const otherProd = this.productsById.get(cf.brandProductId);
+        if (!otherProd) continue;
+        const mfr = (this.manufacturersById.get(otherProd.manufacturerId) ?? '').toUpperCase();
+        if (!byBrand[mfr]) byBrand[mfr] = new Map();
+        byBrand[mfr]!.set(otherProd.code, otherProd);
+      }
+    }
+
+    for (const key of relatedFamiliesKeys) {
+      const appIds = this.applicationsByFamilyPosKey.get(key) ?? [];
+      for (const appId of appIds) {
+        const coFits = this.fitsByApplicationId.get(appId) ?? [];
+        for (const cf of coFits) {
+          if (cf.brandProductId === productId) continue;
+          const otherProd = this.productsById.get(cf.brandProductId);
+          if (!otherProd) continue;
+          const mfr = (this.manufacturersById.get(otherProd.manufacturerId) ?? '').toUpperCase();
+          if (mfr === targetMfr) continue;
+          if (!byBrand[mfr]) byBrand[mfr] = new Map();
+          byBrand[mfr]!.set(otherProd.code, otherProd);
+        }
+      }
+    }
+
+    const result: Record<string, BrandProduct[]> = {};
+    for (const [brand, map] of Object.entries(byBrand)) {
+      if (map.size > 0) {
+        result[brand] = Array.from(map.values());
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Executa busca inteligente multi-critério (por veículo, ano, medida ou código de produto) com filtros combináveis.
    */
   public search(query: string, filters?: SearchFilters): SearchResultItem[] {
     const trimmed = query.trim();
     const cQuery = compactCode(trimmed);
 
-    // 1. Checa busca exata por código de produto primeiro
-    if (cQuery.length >= 3 && this.productsByCode.has(cQuery)) {
+    // 1. Checa busca exata por código de produto primeiro (O(1))
+    if (cQuery.length >= 2 && this.productsByCode.has(cQuery)) {
       const p = this.productsByCode.get(cQuery)!;
       const res = this.buildProductResult(p);
       if (res && this.matchesFilters(res, filters)) {
@@ -208,9 +399,34 @@ export class CatalogSearchEngine {
       }
     }
 
+    // 1.5 Extração inteligente de medidas na barra de busca (ex: "22/16", "24\"", "600mm")
+    const extractedMeasures = extractMeasuresFromQuery(trimmed);
+    if (extractedMeasures && extractedMeasures.cleanedQuery === '') {
+      const results: SearchResultItem[] = [];
+      for (const v of this.dataset.vehicles) {
+        if (!this.vehicleMatchesMeasures(v, extractedMeasures.inchesList)) continue;
+        const item = this.buildVehicleResult(v, 80, 'token_match');
+        if (item && this.matchesFilters(item, filters)) {
+          results.push(item);
+        }
+        if (results.length >= 120) break;
+      }
+      for (const p of this.dataset.products) {
+        if (!this.productMatchesMeasures(p, extractedMeasures.inchesList)) continue;
+        const item = this.buildProductResult(p, 75);
+        if (item && this.matchesFilters(item, filters)) {
+          results.push(item);
+        }
+        if (results.length >= 150) break;
+      }
+      return results;
+    }
+
+    const effectiveQuery = extractedMeasures ? extractedMeasures.cleanedQuery : trimmed;
+
     // 2. Busca via MiniSearch com tokenização e normalização
-    const queryTerms = trimmed
-      ? normalizeText(trimmed)
+    const queryTerms = effectiveQuery
+      ? normalizeText(effectiveQuery)
           .split(/\s+/)
           .filter((t) => t.length > 0)
       : [];
@@ -225,8 +441,8 @@ export class CatalogSearchEngine {
 
     let searchResults: { id: string; score: number }[];
 
-    if (trimmed) {
-      searchResults = this.miniSearch.search(normalizeText(trimmed));
+    if (effectiveQuery) {
+      searchResults = this.miniSearch.search(normalizeText(effectiveQuery));
     } else if (hasActiveFilters) {
       // Quando há filtros combinados ativos sem query geral, varre todos os veículos do catálogo
       searchResults = this.dataset.vehicles.map((v) => ({ id: v.id, score: 1 }));
@@ -248,9 +464,12 @@ export class CatalogSearchEngine {
         if (!isProductSearch && queryTerms.length > 0 && !this.vehicleMatchesQuery(v, queryTerms)) {
           continue;
         }
+        if (extractedMeasures && !this.vehicleMatchesMeasures(v, extractedMeasures.inchesList)) {
+          continue;
+        }
         const { score: intentScore, matchLevel } = this.calculateVehicleIntentScore(
           v,
-          trimmed,
+          effectiveQuery,
           queryTerms,
           r.score,
         );
@@ -262,7 +481,10 @@ export class CatalogSearchEngine {
         const p = this.productsById.get(r.id)!;
         // Se a busca principal é por veículo, impede que códigos numéricos residuais (ex: '2015')
         // poluam o resultado com produtos aleatórios cujo código não foi pesquisado
-        if (!isProductSearch && trimmed && !this.productMatchesQuery(p, queryTerms, trimmed)) {
+        if (!isProductSearch && effectiveQuery && !this.productMatchesQuery(p, queryTerms, effectiveQuery)) {
+          continue;
+        }
+        if (extractedMeasures && !this.productMatchesMeasures(p, extractedMeasures.inchesList)) {
           continue;
         }
         const item = this.buildProductResult(p, r.score);
@@ -447,19 +669,29 @@ export class CatalogSearchEngine {
   }
 
   private buildProductResult(p: BrandProduct, score = 10): SearchResultItem {
-    // Localiza aplicações onde este produto se encaixa
-    const matchingAppIds = this.dataset.fits
-      .filter((f) => f.brandProductId === p.id)
-      .map((f) => f.vehicleApplicationId);
+    // Localiza aplicações onde este produto se encaixa em O(1) via índice fitsByProductId
+    const productFits = this.fitsByProductId.get(p.id) ?? [];
+    const matchingAppIds = productFits.map((f) => f.vehicleApplicationId);
+
+    const uniqueVehicleIds = new Set<string>();
+    for (const appId of matchingAppIds) {
+      const app = this.applicationsById.get(appId);
+      if (app) uniqueVehicleIds.add(app.vehicleId);
+    }
 
     const firstApp = matchingAppIds[0] ? this.applicationsById.get(matchingAppIds[0]) : undefined;
     const firstVehicle = firstApp ? this.vehiclesById.get(firstApp.vehicleId) : undefined;
+    const mfrCode = this.manufacturersById.get(p.manufacturerId) ?? '';
+    const equivalentProductsByBrand = this.getEquivalentProductsForProduct(p.id);
 
     return {
       id: p.id,
       type: 'product',
       score,
       product: p,
+      manufacturerCode: mfrCode,
+      equivalentProductsByBrand,
+      compatibleVehiclesCount: uniqueVehicleIds.size,
       vehicle: firstVehicle,
       matchedApplications: firstApp
         ? [
@@ -469,7 +701,7 @@ export class CatalogSearchEngine {
               fits: [
                 {
                   product: p,
-                  manufacturerCode: this.manufacturersById.get(p.manufacturerId) ?? '',
+                  manufacturerCode: mfrCode,
                   relationType: 'catalog_documented',
                   sources: p.sourceIds
                     .map((sId) => this.sourcesById.get(sId))

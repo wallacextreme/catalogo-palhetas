@@ -1,6 +1,11 @@
 import { describe, expect, it, beforeAll } from 'bun:test';
 import type { CatalogDataset } from '@/domain/types';
-import { CatalogSearchEngine, extractYearFromQuery, type SearchResultItem } from '@/search/search-engine';
+import {
+  CatalogSearchEngine,
+  extractMeasuresFromQuery,
+  extractYearFromQuery,
+  type SearchResultItem,
+} from '@/search/search-engine';
 import { consolidateVehicleFamilies, consolidateVehicleResults } from '@/domain/consolidation';
 
 describe('Search Engine: Technical Queries and Fuzzy Matching', () => {
@@ -798,6 +803,36 @@ describe('Vehicle Family & Technical Variants Architecture (Domain & Search)', (
       const corolla2020 = consolidateVehicleFamilies(searchEngine.search('COROLLA 2020'), 2020);
       expect(corolla2020.length).toBe(1);
       expect(corolla2020[0]?.family?.fullName).toBe('Toyota Corolla');
+    });
+
+    it('15. Busca Híbrida por Medidas (24/14, 22/16, 600mm, 24") e Cross-Reference O(1) Bidirecional', () => {
+      const mPair = extractMeasuresFromQuery('24/14');
+      expect(mPair?.inchesList).toEqual([24, 14]);
+      expect(mPair?.cleanedQuery).toBe('');
+
+      const mMm = extractMeasuresFromQuery('600mm');
+      expect(mMm?.inchesList).toEqual([24]);
+
+      const mCombo = extractMeasuresFromQuery('Onix 24/14');
+      expect(mCombo?.inchesList).toEqual([24, 14]);
+      expect(mCombo?.cleanedQuery).toBe('Onix');
+
+      const pairSearch = consolidateVehicleFamilies(searchEngine.search('24/14'));
+      expect(pairSearch.length).toBeGreaterThan(0);
+
+      // Cross-reference bidirecional O(1) para código de produto
+      const t0 = performance.now();
+      const prodRes = searchEngine.search('YN-PS2416B');
+      const elapsed = performance.now() - t0;
+      expect(elapsed).toBeLessThan(15);
+      expect(prodRes[0]?.type).toBe('product');
+      expect(prodRes[0]?.equivalentProductsByBrand).toBeDefined();
+
+      // Alerta de ano de transição em modelos multi-geração (ex: Gol)
+      const golFamilies = consolidateVehicleFamilies(searchEngine.search('GOL')).filter(
+        (r) => r.type === 'vehicle_family' && r.family?.model.toLowerCase() === 'gol',
+      );
+      expect(golFamilies[0]?.family?.hasTransitionWarning).toBe(true);
     });
   });
 });

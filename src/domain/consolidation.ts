@@ -511,6 +511,64 @@ export function consolidateVehicleFamilies(
     const brandFamilyKey = `${normalizeText(canonicalizeManufacturer(data.brand) || data.brand)}.${data.family}`;
     const relatedFamilies = RELATED_FAMILIES_MAP[brandFamilyKey];
 
+    // Detecta Anos de Transição (mudança de geração, medida ou conector em anos sobrepostos ou limítrofes)
+    const transitionYearsSet = new Set<string>();
+    for (let i = 0; i < activeVariants.length; i++) {
+      for (let j = i + 1; j < activeVariants.length; j++) {
+        const vA = activeVariants[i]!;
+        const vB = activeVariants[j]!;
+
+        // Ignora comparação se forem variantes de carrocerias diferentes (ex: Cabine vs Padrão)
+        if (vA.variant && vB.variant && vA.variant !== vB.variant) continue;
+
+        const startA = vA.yearStart;
+        const endA = vA.yearEnd ?? (vA.yearEndOpen && startA !== null ? 2026 : startA);
+        const startB = vB.yearStart;
+        const endB = vB.yearEnd ?? (vB.yearEndOpen && startB !== null ? 2026 : startB);
+
+        if (startA === null || endA === null || startB === null || endB === null) continue;
+
+        const overlapStart = Math.max(startA, startB);
+        const overlapEnd = Math.min(endA, endB);
+        if (overlapStart > overlapEnd) continue;
+
+        // Checa se há diferença de geração, medida ou conector no ano de sobreposição/transição
+        const diffGen = Boolean(vA.generation && vB.generation && vA.generation !== vB.generation);
+        let diffSpec = diffGen;
+
+        for (const aA of vA.applications) {
+          for (const aB of vB.applications) {
+            if (aA.position !== aB.position) continue;
+            const diffInch =
+              aA.inches !== null &&
+              aB.inches !== null &&
+              aA.inches !== aB.inches &&
+              !(aA.position === 'traseira' && Math.abs(aA.inches - aB.inches) <= 1);
+            const connA = normalizeText(aA.connectorRaw || 'padrao');
+            const connB = normalizeText(aB.connectorRaw || 'padrao');
+            const diffConn = connA !== connB;
+            if (diffInch || diffConn) {
+              diffSpec = true;
+              break;
+            }
+          }
+          if (diffSpec) break;
+        }
+
+        if (diffSpec) {
+          const transLabel = overlapStart === overlapEnd ? `${overlapStart}` : `${overlapStart}–${overlapEnd}`;
+          transitionYearsSet.add(transLabel);
+          vA.hasTransitionWarning = true;
+          vB.hasTransitionWarning = true;
+          vA.transitionWarningText = `Ano de transição (${transLabel}): confirme geração/conector no veículo`;
+          vB.transitionWarningText = `Ano de transição (${transLabel}): confirme geração/conector no veículo`;
+        }
+      }
+    }
+
+    const transitionYears = Array.from(transitionYearsSet);
+    const hasTransitionWarning = transitionYears.length > 0;
+
     const familyResult: VehicleFamilyResult = {
       id: `fam_${key.replace(/[^a-z0-9]/gi, '_')}`,
       type: 'vehicle_family',
@@ -524,6 +582,8 @@ export function consolidateVehicleFamilies(
       sourceIds: allSourceIds,
       selectedYear: filterYear,
       relatedFamilies: relatedFamilies && relatedFamilies.length > 0 ? relatedFamilies : undefined,
+      hasTransitionWarning,
+      transitionYears: transitionYears.length > 0 ? transitionYears : undefined,
     };
 
     familyResult.governance = evaluateFamilyTechnicalGovernance(familyResult);
